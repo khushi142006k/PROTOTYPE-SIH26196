@@ -1,0 +1,8 @@
+{
+  "name": "FitMate — AI Personal Fitness Platform",
+  "description": "Adaptive AI-powered personal fitness and wellness platform that creates custom workout plans, tracks activity & consistency, and provides AI recommendations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
