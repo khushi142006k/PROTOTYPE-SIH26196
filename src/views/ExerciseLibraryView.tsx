@@ -1,19 +1,20 @@
 import React, { useState } from 'react';
-import { Search, Dumbbell, ShieldAlert, Sparkles, X } from 'lucide-react';
+import { Search, Dumbbell, ShieldAlert, Sparkles, X, Loader2 } from 'lucide-react';
 import { Exercise, Language } from '../types';
-import { StorageService } from '../services/storage';
+import { useExercises } from '../hooks/useFitMateData';
 
 interface ExerciseLibraryViewProps {
   language: Language;
 }
 
 export const ExerciseLibraryView: React.FC<ExerciseLibraryViewProps> = ({ language }) => {
-  const [exercises] = useState<Exercise[]>(() => StorageService.getExercises());
+  const { data: exercises = [], isLoading, error } = useExercises();
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
 
-  const categories = ['All', 'Strength', 'Cardio', 'Core', 'Flexibility', 'Mobility'];
+  const categories = ['All', 'Strength', 'Cardio', 'Core', 'Flexibility', 'Mobility', 'Yoga'];
 
   const filteredExercises = exercises.filter(ex => {
     const matchesSearch = ex.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -28,7 +29,7 @@ export const ExerciseLibraryView: React.FC<ExerciseLibraryViewProps> = ({ langua
       {/* Header */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2 font-heading">
             <Dumbbell className="w-6 h-6 text-blue-600" />
             <span>Exercise & Workout Library</span>
           </h1>
@@ -67,38 +68,53 @@ export const ExerciseLibraryView: React.FC<ExerciseLibraryViewProps> = ({ langua
         ))}
       </div>
 
-      {/* Exercises Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredExercises.map((ex) => (
-          <div
-            key={ex.id}
-            onClick={() => setSelectedExercise(ex)}
-            className="bg-white border border-slate-200 hover:border-blue-300 rounded-2xl p-5 space-y-3 cursor-pointer transition-all shadow-xs group hover:shadow-md"
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                  {ex.category}
+      {isLoading ? (
+        <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center space-y-3">
+          <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
+          <p className="text-xs text-slate-500 font-medium">Loading exercise library from Supabase...</p>
+        </div>
+      ) : error ? (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-8 text-center text-xs text-red-700">
+          Failed to load exercise library from database. Please retry.
+        </div>
+      ) : filteredExercises.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-xs text-slate-500">
+          No exercises found matching your search.
+        </div>
+      ) : (
+        /* Exercises Grid */
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredExercises.map((ex) => (
+            <div
+              key={ex.id}
+              onClick={() => setSelectedExercise(ex)}
+              className="bg-white border border-slate-200 hover:border-blue-300 rounded-2xl p-5 space-y-3 cursor-pointer transition-all shadow-xs group hover:shadow-md"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                    {ex.category}
+                  </span>
+                  <h3 className="text-sm font-bold text-slate-900 mt-1 group-hover:text-blue-600 transition-colors font-heading">{ex.name}</h3>
+                </div>
+                <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                  {ex.difficulty}
                 </span>
-                <h3 className="text-sm font-bold text-slate-900 mt-1 group-hover:text-blue-600 transition-colors">{ex.name}</h3>
               </div>
-              <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                {ex.difficulty}
-              </span>
-            </div>
 
-            <div className="space-y-1 text-xs">
-              <p className="text-slate-500 text-[11px]"><span className="text-slate-700 font-semibold">Target:</span> {ex.targetArea}</p>
-              <p className="text-slate-500 text-[11px]"><span className="text-slate-700 font-semibold">Equipment:</span> {ex.equipmentNeeded}</p>
-            </div>
+              <div className="space-y-1 text-xs">
+                <p className="text-slate-500 text-[11px]"><span className="text-slate-700 font-semibold">Target:</span> {ex.targetArea}</p>
+                <p className="text-slate-500 text-[11px]"><span className="text-slate-700 font-semibold">Equipment:</span> {ex.equipmentNeeded}</p>
+              </div>
 
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-blue-600 font-semibold">
-              <span>Default: {ex.defaultSets} sets × {ex.defaultReps}</span>
-              <span className="group-hover:translate-x-1 transition-transform">View Form →</span>
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-blue-600 font-semibold">
+                <span>Default: {ex.defaultSets} sets × {ex.defaultReps}</span>
+                <span className="group-hover:translate-x-1 transition-transform">View Form →</span>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* EXERCISE DETAIL MODAL */}
       {selectedExercise && (

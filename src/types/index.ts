@@ -28,6 +28,18 @@ export interface UserProfile {
   preferences: string;
   language: Language;
   isAdmin?: boolean;
+  role?: 'user' | 'admin' | 'moderator';
+  status?: 'active' | 'suspended';
+  heightCm?: number;
+  weightKg?: number;
+  gender?: string;
+  dateOfBirth?: string;
+  onboardingCompleted?: boolean;
+  xp?: number;
+  level?: number;
+  leaderboardOptIn?: boolean;
+  lastActiveAt?: string;
+  createdAt?: string;
 }
 
 export interface FitnessAssessment {
@@ -61,7 +73,7 @@ export interface Goal {
 export interface Exercise {
   id: string;
   name: string;
-  category: 'Cardio' | 'Strength' | 'Flexibility' | 'Mobility' | 'Full Body' | 'Core';
+  category: 'Cardio' | 'Strength' | 'Flexibility' | 'Mobility' | 'Full Body' | 'Core' | 'Yoga';
   difficulty: ExperienceLevel;
   targetArea: string;
   instructions: string[];
@@ -71,6 +83,12 @@ export interface Exercise {
   safetyGuidance: string;
   equipmentNeeded: string;
   iconType: 'pushup' | 'squat' | 'plank' | 'run' | 'stretch' | 'dumbbell' | 'jumping' | 'lunge' | 'generic';
+  videoUrl?: string;
+  imageUrl?: string;
+  isActive?: boolean;
+  muscleGroups?: string[];
+  caloriesPerMinute?: number;
+  createdBy?: string;
 }
 
 export interface WorkoutExercise {
@@ -113,11 +131,11 @@ export interface WorkoutPlan {
 export interface WorkoutSessionLog {
   id: string;
   userId: string;
-  planId: string;
+  planId?: string;
   dayName: string;
   durationMinutes: number;
   caloriesBurned: number;
-  completedAt: string; // ISO string or YYYY-MM-DD
+  completedAt: string;
   exercisesCompleted: number;
   totalExercises: number;
   difficultyFeedback?: 'Too Easy' | 'Just Right' | 'Too Hard';
@@ -137,16 +155,22 @@ export interface ActivityLog {
 
 export interface UserFeedback {
   id: string;
-  userId: string;
+  userId?: string;
   userName?: string;
-  category: 'General Feedback' | 'AI Assistant' | 'Workout' | 'Exercise' | 'Progress Tracking' | 'Recommendations' | 'UI/UX' | 'Bug Report' | 'Other' | 'Workout Difficulty' | 'Exercise Quality' | 'AI Recommendations' | 'User Experience' | 'Platform Issue' | 'General';
+  category: string;
   message: string;
-  rating: number; // 1 to 5
+  rating: number;
   createdAt: string;
   status?: 'New' | 'Reviewed' | 'Resolved';
+  adminReply?: string;
+  repliedAt?: string;
+  repliedBy?: string;
+  isPublic?: boolean;
+  isApproved?: boolean;
 }
 
 export interface AIProgressAnalysis {
+  id?: string;
   headline: string;
   consistencyScore: number;
   keyObservations: string[];
@@ -156,4 +180,149 @@ export interface AIProgressAnalysis {
     description: string;
   }[];
   encouragement: string;
+  createdAt?: string;
+}
+
+export interface ChatMessage {
+  id?: string;
+  userId?: string;
+  role: 'user' | 'model' | 'system';
+  content: string;
+  createdAt?: string;
+}
+
+export interface Announcement {
+  id: string;
+  title: string;
+  body: string;
+  audience?: string;
+  startsAt?: string;
+  endsAt?: string;
+  isActive?: boolean;
+  createdAt?: string;
+  read?: boolean;
+}
+
+export interface AdminLog {
+  id: string;
+  adminId?: string;
+  action: string;
+  targetType?: string;
+  targetId?: string;
+  details?: any;
+  createdAt: string;
+}
+
+export interface AIUsageLog {
+  id: string;
+  userId?: string;
+  endpoint: string;
+  status: string;
+  latencyMs?: number;
+  error?: string;
+  createdAt: string;
+}
+
+export interface WorkoutTemplate {
+  id: string;
+  title: string;
+  description?: string;
+  difficulty: ExperienceLevel;
+  category: string;
+  estimatedWeeklyBurn?: string;
+  weeklySchedule: WorkoutDay[];
+  isPublished: boolean;
+  usageCount: number;
+  createdAt?: string;
+}
+
+export interface UserBadge {
+  id: string;
+  userId: string;
+  badgeKey: string;
+  name: string;
+  description: string;
+  icon: string;
+  earnedAt: string;
+}
+
+export interface Challenge {
+  id: string;
+  title: string;
+  description: string;
+  targetMetric: string;
+  targetValue: number;
+  startDate: string;
+  endDate: string;
+  isActive: boolean;
+  participantCount?: number;
+  userJoined?: boolean;
+  userProgress?: number;
+}
+
+export interface BodyMetric {
+  id: string;
+  userId: string;
+  date: string;
+  weightKg?: number;
+  heightCm?: number;
+  waistCm?: number;
+  notes?: string;
+}
+
+export interface WaterLog {
+  id: string;
+  userId: string;
+  date: string;
+  amountMl: number;
+}
+
+export interface SleepLog {
+  id: string;
+  userId: string;
+  date: string;
+  hours: number;
+  quality: string;
+}
+
+export interface MealLog {
+  id: string;
+  userId: string;
+  date: string;
+  mealName: string;
+  calories: number;
+  proteinG?: number;
+  carbsG?: number;
+  fatG?: number;
+  isIndianFood?: boolean;
+}
+
+export interface ParqAssessment {
+  id?: string;
+  userId: string;
+  hasHeartCondition: boolean;
+  hasChestPain: boolean;
+  hasDizziness: boolean;
+  hasJointIssue: boolean;
+  onBpMedication: boolean;
+  otherMedicalReason: boolean;
+  riskLevel: 'Low' | 'Moderate' | 'High';
+  createdAt?: string;
+}
+
+export interface PublicStats {
+  totalUsers: number;
+  totalWorkouts: number;
+  totalMinutes: number;
+}
+
+export interface AdminDashboardStats {
+  totalUsers: number;
+  newUsers7d: number;
+  totalWorkouts: number;
+  totalMinutes: number;
+  avgCompletionRate: number;
+  avgRating: number;
+  openFeedback: number;
+  aiCallsToday: number;
 }

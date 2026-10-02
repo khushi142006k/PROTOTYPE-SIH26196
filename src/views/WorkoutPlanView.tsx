@@ -114,8 +114,8 @@ export const WorkoutPlanView: React.FC<WorkoutPlanViewProps> = ({
             <span className="text-sm font-bold text-blue-900 font-mono">{plan.estimatedWeeklyBurn}</span>
           </div>
           <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-            <span className="text-[10px] text-slate-500 font-medium block">AI Model</span>
-            <span className="text-sm font-bold text-slate-800">Gemini 3.8 Flash</span>
+            <span className="text-[10px] text-slate-500 font-medium block">AI Engine</span>
+            <span className="text-sm font-bold text-slate-800">Google Gemini AI</span>
           </div>
           <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
             <span className="text-[10px] text-slate-500 font-medium block">Status</span>

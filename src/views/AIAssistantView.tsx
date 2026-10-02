@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Bot, Send, Sparkles } from 'lucide-react';
 import { UserProfile, Language } from '../types';
-import { StorageService } from '../services/storage';
+import { useAuth } from '../context/AuthContext';
 
 interface AIAssistantViewProps {
   user: UserProfile;
@@ -16,6 +16,7 @@ interface ChatMessage {
 }
 
 export const AIAssistantView: React.FC<AIAssistantViewProps> = ({ user, language }) => {
+  const { session } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'msg_welcome',
@@ -50,9 +51,14 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({ user, language
     setLoading(true);
 
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           message: query.trim(),
           history: messages.map(m => ({ role: m.role, content: m.content })),
@@ -60,8 +66,8 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({ user, language
             name: user.name,
             goal: user.preferences || 'General Fitness',
             experience: user.experience,
-            equipment: user.equipment.join(', '),
-            streak: StorageService.calculateStreak(),
+            equipment: user.equipment?.join(', ') || 'None',
+            streak: 3,
             weeklyCompletionRate: '75'
           }
         })

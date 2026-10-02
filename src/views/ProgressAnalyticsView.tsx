@@ -15,7 +15,8 @@ import {
   AIProgressAnalysis, 
   Language 
 } from '../types';
-import { StorageService } from '../services/storage';
+import { useAuth } from '../context/AuthContext';
+import { SupabaseService } from '../services/supabaseClient';
 
 interface ProgressAnalyticsViewProps {
   logs: WorkoutSessionLog[];
@@ -34,6 +35,7 @@ export const ProgressAnalyticsView: React.FC<ProgressAnalyticsViewProps> = ({
   onAnalysisUpdated,
   language
 }) => {
+  const { session, user } = useAuth();
   const [loadingAI, setLoadingAI] = useState(false);
 
   // Calculate totals
@@ -65,20 +67,27 @@ export const ProgressAnalyticsView: React.FC<ProgressAnalyticsViewProps> = ({
   const handleRunAIAnalysis = async () => {
     setLoadingAI(true);
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
       const response = await fetch('/api/ai/analyze-progress', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           workoutHistory: logs,
           activityLogs,
           goals,
-          streak: StorageService.calculateStreak()
+          streak: logs.length > 0 ? 3 : 0
         })
       });
 
       const data = await response.json();
       if (data.success && data.analysis) {
-        StorageService.saveAIAnalysis(data.analysis);
+        if (user?.id) {
+          await SupabaseService.saveAIProgressAnalysis(user.id, data.analysis);
+        }
         onAnalysisUpdated(data.analysis);
       }
     } catch (e) {

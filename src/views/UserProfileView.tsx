@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Save, CheckCircle2 } from 'lucide-react';
 import { UserProfile, Language } from '../types';
-import { StorageService } from '../services/storage';
+import { SupabaseService, isSupabaseConfigured } from '../services/supabaseClient';
+import { useAuth } from '../context/AuthContext';
 
 interface UserProfileViewProps {
   user: UserProfile;
@@ -16,6 +17,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   language,
   onLanguageChange
 }) => {
+  const { refreshProfile } = useAuth();
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
   const [experience, setExperience] = useState<UserProfile['experience']>(user.experience);
@@ -24,9 +26,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   const [durationMinutes, setDurationMinutes] = useState(user.durationMinutes);
   const [preferences, setPreferences] = useState(user.preferences);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaving(true);
     const updated: UserProfile = {
       ...user,
       name,
@@ -39,10 +43,27 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       language
     };
 
-    StorageService.saveUserProfile(updated);
-    onProfileUpdated(updated);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      if (isSupabaseConfigured() && user.id) {
+        await SupabaseService.updateProfile(user.id, {
+          name,
+          experience,
+          location,
+          available_days: availableDays,
+          duration_minutes: durationMinutes,
+          preferences,
+          language
+        });
+        await refreshProfile();
+      }
+      onProfileUpdated(updated);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      console.error('Error saving profile:', err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -190,10 +211,20 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
         <button
           type="submit"
-          className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-2"
+          disabled={saving}
+          className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
         >
-          <Save className="w-4 h-4" />
-          <span>Save Profile Preferences</span>
+          {saving ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <span>Saving Profile...</span>
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              <span>Save Profile Preferences</span>
+            </>
+          )}
         </button>
 
       </form>

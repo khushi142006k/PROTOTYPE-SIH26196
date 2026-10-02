@@ -11,10 +11,12 @@ import {
   Sparkles
 } from 'lucide-react';
 import { WorkoutDay, WorkoutExercise, WorkoutSessionLog, Language } from '../types';
-import { StorageService } from '../services/storage';
+import { useAuth } from '../context/AuthContext';
+import { SupabaseService } from '../services/supabaseClient';
 
 interface WorkoutRunnerModalProps {
   workoutDay: WorkoutDay;
+  planId?: string;
   isOpen: boolean;
   onClose: () => void;
   onWorkoutCompleted: (log: WorkoutSessionLog) => void;
@@ -23,17 +25,21 @@ interface WorkoutRunnerModalProps {
 
 export const WorkoutRunnerModal: React.FC<WorkoutRunnerModalProps> = ({
   workoutDay,
+  planId,
   isOpen,
   onClose,
   onWorkoutCompleted,
   language
 }) => {
+  const { user } = useAuth();
+
   const [currentExerciseIdx, setCurrentExerciseIdx] = useState(0);
   const [currentSet, setCurrentSet] = useState(1);
   const [isResting, setIsResting] = useState(false);
   const [restSecondsLeft, setRestSecondsLeft] = useState(30);
   const [isTimerPaused, setIsTimerPaused] = useState(false);
   const [completedExercisesCount, setCompletedExercisesCount] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Post workout feedback state
   const [isFinished, setIsFinished] = useState(false);
@@ -59,7 +65,7 @@ export const WorkoutRunnerModal: React.FC<WorkoutRunnerModalProps> = ({
       osc.start();
       osc.stop(audioCtx.currentTime + 0.3);
     } catch (e) {
-      // Audio context fallback
+      // Audio fallback
     }
   };
 
@@ -109,23 +115,32 @@ export const WorkoutRunnerModal: React.FC<WorkoutRunnerModalProps> = ({
     }
   };
 
-  const handleFinalSubmitLog = () => {
+  const handleFinalSubmitLog = async () => {
+    if (!user) return;
+    setIsSubmitting(true);
     const elapsedMinutes = Math.max(1, Math.round((Date.now() - startTime) / 60000));
-    const newLog = StorageService.addWorkoutLog({
-      userId: StorageService.getUserProfile().id,
-      planId: StorageService.getActivePlan()?.id || 'active',
-      dayName: workoutDay.dayName,
-      durationMinutes: elapsedMinutes,
-      caloriesBurned: Math.round((workoutDay.estimatedCalories || 180) * (completedExercisesCount / totalExercises)),
-      completedAt: new Date().toISOString(),
-      exercisesCompleted: completedExercisesCount,
-      totalExercises,
-      difficultyFeedback: difficultyRating,
-      notes: userNotes
-    });
+    
+    try {
+      const savedLog = await SupabaseService.saveWorkoutLog({
+        userId: user.id,
+        planId: planId,
+        dayName: workoutDay.dayName,
+        durationMinutes: elapsedMinutes,
+        caloriesBurned: Math.round((workoutDay.estimatedCalories || 180) * (completedExercisesCount / totalExercises)),
+        completedAt: new Date().toISOString(),
+        exercisesCompleted: completedExercisesCount,
+        totalExercises,
+        difficultyFeedback: difficultyRating,
+        notes: userNotes
+      });
 
-    onWorkoutCompleted(newLog);
-    onClose();
+      setIsSubmitting(false);
+      onWorkoutCompleted(savedLog);
+      onClose();
+    } catch (err: any) {
+      setIsSubmitting(false);
+      console.error('Failed to log workout to Supabase:', err);
+    }
   };
 
   return (
@@ -260,7 +275,6 @@ export const WorkoutRunnerModal: React.FC<WorkoutRunnerModalProps> = ({
               </p>
             </div>
 
-            {/* Rating difficulty */}
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-left space-y-3">
               <label className="text-xs font-bold text-slate-900 block">
                 How did the workout difficulty feel?
@@ -298,9 +312,14 @@ export const WorkoutRunnerModal: React.FC<WorkoutRunnerModalProps> = ({
 
             <button
               onClick={handleFinalSubmitLog}
-              className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-blue-600/20 transition-all"
+              disabled={isSubmitting}
+              className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-2"
             >
-              Save Workout Log & Update Streak
+              {isSubmitting ? (
+                <span className="inline-block animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+              ) : (
+                <span>Save Workout Log & Update Streak</span>
+              )}
             </button>
           </div>
         )}

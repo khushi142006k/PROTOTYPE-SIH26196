@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   UserProfile, 
   WorkoutPlan, 
@@ -9,7 +9,18 @@ import {
   WorkoutDay, 
   Language 
 } from './types';
-import { StorageService } from './services/storage';
+import { useAuth } from './context/AuthContext';
+import { 
+  useActivePlan, 
+  useGoals, 
+  useWorkoutLogs, 
+  useActivityLogs, 
+  useStreak, 
+  useAIAnalysis,
+  useDataMutations
+} from './hooks/useFitMateData';
+import { SupabaseService } from './services/supabaseClient';
+
 import { Navbar } from './components/Navbar';
 import { SafetyBanner } from './components/SafetyBanner';
 import { AssessmentWizard } from './components/AssessmentWizard';
@@ -19,6 +30,7 @@ import { GoalModal } from './components/GoalModal';
 import { FeedbackModal } from './components/FeedbackModal';
 import { LoginModal } from './components/LoginModal';
 
+import { LandingPageView } from './views/LandingPageView';
 import { DashboardView } from './views/DashboardView';
 import { WorkoutPlanView } from './views/WorkoutPlanView';
 import { ExerciseLibraryView } from './views/ExerciseLibraryView';
@@ -28,17 +40,23 @@ import { AdminDashboardView } from './views/AdminDashboardView';
 import { UserProfileView } from './views/UserProfileView';
 
 export default function App() {
-  const [user, setUser] = useState<UserProfile>(() => StorageService.getUserProfile());
-  const [plan, setPlan] = useState<WorkoutPlan | null>(() => StorageService.getActivePlan());
-  const [goals, setGoals] = useState<Goal[]>(() => StorageService.getGoals());
-  const [workoutLogs, setWorkoutLogs] = useState<WorkoutSessionLog[]>(() => StorageService.getWorkoutLogs());
-  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => StorageService.getActivityLogs());
-  const [aiAnalysis, setAiAnalysis] = useState<AIProgressAnalysis | null>(() => StorageService.getAIAnalysis());
-  const [streak, setStreak] = useState<number>(() => StorageService.calculateStreak());
-  
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
-  const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
-  const [language, setLanguage] = useState<Language>(user.language || 'en');
+  const { user: authUser, session, isLoggedIn, isAdmin, signOut, setUser: setAuthUser } = useAuth();
+  const userId = authUser?.id;
+
+  // Real-time Supabase hooks via React Query
+  const { data: dbPlan } = useActivePlan(userId);
+  const { data: dbGoals = [] } = useGoals(userId);
+  const { data: dbWorkoutLogs = [] } = useWorkoutLogs(userId);
+  const { data: dbActivityLogs = [] } = useActivityLogs(userId);
+  const { data: dbStreak = 0 } = useStreak(userId);
+  const { data: dbAnalysis = null } = useAIAnalysis(userId);
+
+  const { updateGoalProgress } = useDataMutations(userId);
+
+  // Local state fallbacks & active tab state
+  const [activeTab, setActiveTab] = useState<string>('home');
+  const [isAdminMode, setIsAdminMode] = useState<boolean>(isAdmin);
+  const [language, setLanguage] = useState<Language>(authUser?.language || 'en');
 
   // Modals state
   const [showAssessment, setShowAssessment] = useState<boolean>(false);
@@ -48,78 +66,142 @@ export default function App() {
   const [showGoalModal, setShowGoalModal] = useState<boolean>(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState<boolean>(false);
   const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
+  const [loginModalMode, setLoginModalMode] = useState<'login' | 'register' | 'admin_login'>('login');
 
-  const handleLoginSuccess = (loggedInUser: UserProfile) => {
-    setUser(loggedInUser);
-    setIsLoggedIn(true);
-    refreshLogsAndStreak();
+  useEffect(() => {
+    if (isAdmin !== undefined) {
+      setIsAdminMode(isAdmin);
+    }
+  }, [isAdmin]);
+
+  // Ensure logged-in users are routed to appropriate default view
+  useEffect(() => {
+    if (isLoggedIn) {
+      if (isAdminMode && (activeTab === 'home' || activeTab === 'dashboard' || activeTab === 'workoutPlan' || activeTab === 'progress' || activeTab === 'aiAssistant')) {
+        setActiveTab('adminPanel');
+      } else if (!isAdminMode && (activeTab === 'home' || activeTab === 'adminPanel')) {
+        setActiveTab('dashboard');
+      }
+    }
+  }, [isLoggedIn, isAdminMode]);
+
+  const currentUser: UserProfile = authUser || {
+    id: 'guest',
+    name: 'Fitness Member',
+    email: '',
+    ageGroup: '25-34',
+    activityLevel: 'Lightly Active',
+    experience: 'Beginner',
+    location: 'Home',
+    availableDays: 4,
+    durationMinutes: 30,
+    preferredTime: 'Morning (7:00 AM)',
+    equipment: ['None (Bodyweight)'],
+    preferredActivities: ['Bodyweight Training'],
+    preferences: '',
+    language: language,
+    isAdmin: false
   };
 
-  const handleLogout = () => {
-    setIsLoggedIn(false);
+  const handleOpenLogin = (mode: 'login' | 'register' | 'admin_login' = 'login') => {
+    setLoginModalMode(mode);
+    setShowLoginModal(true);
+  };
+
+  const handleTabChange = (tab: string) => {
+    const protectedTabs = ['dashboard', 'workoutPlan', 'progress', 'aiAssistant', 'profile', 'adminPanel'];
+    
+    if (protectedTabs.includes(tab) && !isLoggedIn) {
+      if (tab === 'adminPanel') {
+        handleOpenLogin('admin_login');
+      } else {
+        handleOpenLogin('login');
+      }
+      return;
+    }
+
+    setActiveTab(tab);
+  };
+
+  const handleLoginSuccess = (loggedInUser?: UserProfile | string) => {
+    if (typeof loggedInUser === 'object' && loggedInUser) {
+      setAuthUser(loggedInUser);
+      setIsAdminMode(loggedInUser.isAdmin || false);
+      if (loggedInUser.isAdmin) {
+        setActiveTab('adminPanel');
+      } else {
+        setActiveTab('dashboard');
+      }
+    } else {
+      setActiveTab('dashboard');
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut();
+    setIsAdminMode(false);
     setShowLoginModal(false);
-    setActiveTab('dashboard');
-  };
-
-  // Sync state helpers
-  const refreshLogsAndStreak = () => {
-    setWorkoutLogs(StorageService.getWorkoutLogs());
-    setActivityLogs(StorageService.getActivityLogs());
-    setStreak(StorageService.calculateStreak());
+    setActiveTab('home');
   };
 
   const handleStartWorkout = (dayIndex: number) => {
-    if (plan && plan.weeklySchedule && plan.weeklySchedule[dayIndex]) {
-      setSelectedWorkoutDay(plan.weeklySchedule[dayIndex]);
+    if (!isLoggedIn) {
+      handleOpenLogin('login');
+      return;
+    }
+    if (dbPlan && dbPlan.weeklySchedule && dbPlan.weeklySchedule[dayIndex]) {
+      setSelectedWorkoutDay(dbPlan.weeklySchedule[dayIndex]);
       setShowWorkoutRunner(true);
     }
   };
 
-  const handleWorkoutCompleted = (log: WorkoutSessionLog) => {
-    refreshLogsAndStreak();
+  const handleWorkoutCompleted = () => {
+    // React Query automatically invalidates and refetches workout logs & streak
   };
 
-  const handleActivityLogged = (act: ActivityLog) => {
-    refreshLogsAndStreak();
+  const handleActivityLogged = () => {
+    // React Query automatically refetches activity logs
   };
 
-  const handleGoalAdded = (newGoal: Goal) => {
-    setGoals(StorageService.getGoals());
+  const handleGoalAdded = () => {
+    // React Query automatically refetches goals
   };
 
   const handleUpdateGoalProgress = (goalId: string, currentProgress: number) => {
-    StorageService.updateGoalProgress(goalId, currentProgress);
-    setGoals(StorageService.getGoals());
+    updateGoalProgress({ goalId, progress: currentProgress });
   };
 
   const handlePlanGenerated = (newPlan: WorkoutPlan, updatedProfile: UserProfile) => {
-    setPlan(newPlan);
-    setUser(updatedProfile);
+    setAuthUser(updatedProfile);
+    setActiveTab('workoutPlan');
   };
 
   const handleAdaptPlan = async (feedback: string) => {
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
       const response = await fetch('/api/ai/adapt-plan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
-          currentPlan: plan,
+          currentPlan: dbPlan,
           feedback,
           missedDaysCount: 1
         })
       });
 
       const data = await response.json();
-      if (data.success && data.plan) {
+      if (data.success && data.plan && userId) {
         const adaptedPlan: WorkoutPlan = {
-          ...plan!,
-          planTitle: data.plan.planTitle || plan?.planTitle || 'Adapted Plan',
-          summary: data.plan.summary || plan?.summary || 'Adapted for your feedback.',
-          weeklySchedule: data.plan.weeklySchedule || plan?.weeklySchedule || []
+          ...dbPlan!,
+          planTitle: data.plan.planTitle || dbPlan?.planTitle || 'Adapted Plan',
+          summary: data.plan.summary || dbPlan?.summary || 'Adapted for your feedback.',
+          weeklySchedule: data.plan.weeklySchedule || dbPlan?.weeklySchedule || []
         };
-        StorageService.saveActivePlan(adaptedPlan);
-        setPlan(adaptedPlan);
+        await SupabaseService.saveActivePlan(userId, adaptedPlan);
       }
     } catch (e) {
       console.error('Error adapting plan:', e);
@@ -132,16 +214,31 @@ export default function App() {
       {/* Navbar */}
       <Navbar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        user={user}
-        streak={streak}
+        setActiveTab={handleTabChange}
+        user={currentUser}
+        streak={dbStreak}
         language={language}
         onLanguageChange={setLanguage}
         isAdminMode={isAdminMode}
-        onToggleAdmin={() => setIsAdminMode(!isAdminMode)}
-        onOpenAssessment={() => setShowAssessment(true)}
-        onOpenLogin={() => setShowLoginModal(true)}
+        onToggleAdmin={() => {
+          if (!isLoggedIn) {
+            handleOpenLogin('admin_login');
+          } else {
+            const nextAdminMode = !isAdminMode;
+            setIsAdminMode(nextAdminMode);
+            setActiveTab(nextAdminMode ? 'adminPanel' : 'dashboard');
+          }
+        }}
+        onOpenAssessment={() => {
+          if (!isLoggedIn) {
+            handleOpenLogin('login');
+          } else {
+            setShowAssessment(true);
+          }
+        }}
+        onOpenLogin={handleOpenLogin}
         isLoggedIn={isLoggedIn}
+        onLogout={handleLogout}
       />
 
       {/* Main Content Area */}
@@ -151,28 +248,43 @@ export default function App() {
         <SafetyBanner language={language} />
 
         {/* Tab Views */}
-        {activeTab === 'dashboard' && (
+        {activeTab === 'home' && (
+          <LandingPageView
+            onOpenAssessment={() => {
+              if (!isLoggedIn) {
+                handleOpenLogin('login');
+              } else {
+                setShowAssessment(true);
+              }
+            }}
+            onOpenLogin={handleOpenLogin}
+            onNavigateToTab={handleTabChange}
+            language={language}
+          />
+        )}
+
+        {activeTab === 'dashboard' && isLoggedIn && (
           <DashboardView
-            user={user}
-            plan={plan}
-            goals={goals}
-            logs={workoutLogs}
-            activityLogs={activityLogs}
-            aiAnalysis={aiAnalysis}
-            streak={streak}
+            user={currentUser}
+            plan={dbPlan || null}
+            goals={dbGoals}
+            logs={dbWorkoutLogs}
+            activityLogs={dbActivityLogs}
+            aiAnalysis={dbAnalysis}
+            streak={dbStreak}
             language={language}
             onStartWorkout={handleStartWorkout}
             onOpenActivityLogger={() => setShowActivityLogger(true)}
             onOpenGoalModal={() => setShowGoalModal(true)}
             onOpenFeedbackModal={() => setShowFeedbackModal(true)}
-            onNavigateToTab={setActiveTab}
+            onNavigateToTab={handleTabChange}
             onUpdateGoalProgress={handleUpdateGoalProgress}
           />
         )}
 
-        {activeTab === 'workoutPlan' && (
+        {activeTab === 'workoutPlan' && isLoggedIn && (
           <WorkoutPlanView
-            plan={plan}
+            plan={dbPlan || null}
             language={language}
             onStartWorkout={handleStartWorkout}
             onOpenAssessment={() => setShowAssessment(true)}
@@ -184,29 +296,29 @@ export default function App() {
           <ExerciseLibraryView language={language} />
         )}
 
-        {activeTab === 'progress' && (
+        {activeTab === 'progress' && isLoggedIn && (
           <ProgressAnalyticsView
-            logs={workoutLogs}
-            activityLogs={activityLogs}
-            goals={goals}
-            aiAnalysis={aiAnalysis}
-            onAnalysisUpdated={setAiAnalysis}
+            logs={dbWorkoutLogs}
+            activityLogs={dbActivityLogs}
+            goals={dbGoals}
+            aiAnalysis={dbAnalysis}
+            onAnalysisUpdated={() => {}}
             language={language}
           />
         )}
 
-        {activeTab === 'aiAssistant' && (
-          <AIAssistantView user={user} language={language} />
+        {activeTab === 'aiAssistant' && isLoggedIn && (
+          <AIAssistantView user={currentUser} language={language} />
         )}
 
-        {activeTab === 'adminPanel' && isAdminMode && (
+        {activeTab === 'adminPanel' && isLoggedIn && isAdminMode && (
           <AdminDashboardView />
         )}
 
-        {activeTab === 'profile' && (
+        {activeTab === 'profile' && isLoggedIn && (
           <UserProfileView
-            user={user}
-            onProfileUpdated={setUser}
+            user={currentUser}
+            onProfileUpdated={(updated) => setAuthUser(updated)}
             language={language}
             onLanguageChange={setLanguage}
           />
@@ -216,7 +328,7 @@ export default function App() {
 
       {/* App Modals */}
       <AssessmentWizard
-        user={user}
+        user={currentUser}
         isOpen={showAssessment}
         onClose={() => setShowAssessment(false)}
         onPlanGenerated={handlePlanGenerated}
@@ -254,8 +366,7 @@ export default function App() {
         isOpen={showLoginModal}
         onClose={() => setShowLoginModal(false)}
         onLoginSuccess={handleLoginSuccess}
-        isLoggedIn={isLoggedIn}
-        onLogout={handleLogout}
+        mode={loginModalMode}
       />
 
       {/* Footer */}

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { X, MessageSquare, Star, Send, CheckCircle2 } from 'lucide-react';
 import { UserFeedback } from '../types';
-import { StorageService } from '../services/storage';
+import { useAuth } from '../context/AuthContext';
+import { SupabaseService } from '../services/supabaseClient';
 
 interface FeedbackModalProps {
   isOpen: boolean;
@@ -26,15 +27,17 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
   onClose,
   onFeedbackSubmitted
 }) => {
+  const { user } = useAuth();
   const [category, setCategory] = useState<string>('General Feedback');
   const [message, setMessage] = useState('');
   const [rating, setRating] = useState(5);
   const [submitted, setSubmitted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -49,24 +52,31 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
       return;
     }
 
-    const user = StorageService.getUserProfile();
-    const newFb = StorageService.addFeedback({
-      userId: user.id,
-      userName: user.name,
-      category: category as UserFeedback['category'],
-      message: trimmedMsg,
-      rating
-    });
+    setIsLoading(true);
 
-    if (onFeedbackSubmitted) onFeedbackSubmitted(newFb);
-    setSubmitted(true);
-    setTimeout(() => {
-      setSubmitted(false);
-      setMessage('');
-      setCategory('General Feedback');
-      setRating(5);
-      onClose();
-    }, 1500);
+    try {
+      const newFb = await SupabaseService.saveFeedback({
+        userId: user?.id,
+        userName: user?.name || 'Anonymous User',
+        category: category as UserFeedback['category'],
+        message: trimmedMsg,
+        rating
+      });
+
+      setIsLoading(false);
+      if (onFeedbackSubmitted) onFeedbackSubmitted(newFb);
+      setSubmitted(true);
+      setTimeout(() => {
+        setSubmitted(false);
+        setMessage('');
+        setCategory('General Feedback');
+        setRating(5);
+        onClose();
+      }, 1500);
+    } catch (err: any) {
+      setIsLoading(false);
+      setError(err.message || 'Failed to submit feedback');
+    }
   };
 
   return (
@@ -95,7 +105,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
               <CheckCircle2 className="w-6 h-6 text-green-600" />
             </div>
             <h4 className="text-base font-bold text-slate-900">Thank you for your feedback!</h4>
-            <p className="text-xs text-slate-600">Your thoughts have been safely recorded to refine future AI workout plans.</p>
+            <p className="text-xs text-slate-600">Your thoughts have been safely recorded in Supabase to refine future AI workout plans.</p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-5 space-y-4">
@@ -159,10 +169,17 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
 
             <button
               type="submit"
+              disabled={isLoading}
               className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-2 mt-2"
             >
-              <Send className="w-4 h-4" />
-              <span>Submit Feedback</span>
+              {isLoading ? (
+                <span className="inline-block animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  <span>Submit Feedback</span>
+                </>
+              )}
             </button>
 
           </form>
@@ -172,4 +189,3 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
     </div>
   );
 };
-

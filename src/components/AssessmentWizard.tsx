@@ -11,10 +11,11 @@ import {
   Home, 
   Building2, 
   Zap,
-  Bot
+  Bot,
+  AlertCircle
 } from 'lucide-react';
 import { UserProfile, GoalType, WorkoutPlan, Language } from '../types';
-import { StorageService } from '../services/storage';
+import { SupabaseService, supabase } from '../services/supabaseClient';
 
 interface AssessmentWizardProps {
   user: UserProfile;
@@ -42,7 +43,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
   const [durationMinutes, setDurationMinutes] = useState<number>(user.durationMinutes || 30);
   const [selectedGoal, setSelectedGoal] = useState<GoalType>('General Fitness');
   const [selectedEquipment, setSelectedEquipment] = useState<string[]>(
-    user.equipment.length ? user.equipment : ['None (Bodyweight)']
+    user.equipment?.length ? user.equipment : ['None (Bodyweight)']
   );
 
   if (!isOpen) return null;
@@ -87,14 +88,39 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
       availableDays,
       durationMinutes,
       equipment: selectedEquipment,
+      onboardingCompleted: true
     };
 
     try {
+      // 1. Save Fitness Assessment to Supabase
+      await SupabaseService.saveAssessment({
+        userId: user.id,
+        ageGroup: user.ageGroup || '25-34',
+        activityLevel: user.activityLevel || 'Lightly Active',
+        experience,
+        location,
+        availableDays,
+        durationMinutes,
+        preferredTime: user.preferredTime || 'Morning (7:00 AM)',
+        equipment: selectedEquipment,
+        preferredActivities: [selectedGoal]
+      });
+
+      // 2. Update Profile in Supabase
+      await SupabaseService.upsertProfile(updatedProfile);
+
+      // 3. Get Auth Token for backend API call
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = session?.access_token;
+
+      // 4. Generate AI Workout Plan via Backend
       const response = await fetch('/api/ai/generate-plan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
         body: JSON.stringify({
-          profile: updatedProfile,
           goals: [selectedGoal],
           availableDays,
           duration: durationMinutes,
@@ -107,51 +133,16 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
       const data = await response.json();
 
       if (data.success && data.plan) {
-        const generatedPlan: WorkoutPlan = {
-          id: 'plan_ai_' + Date.now(),
-          userId: user.id,
-          planTitle: data.plan.planTitle || `${selectedGoal} Plan`,
-          summary: data.plan.summary || 'Custom AI-generated fitness schedule.',
-          recommendedDays: data.plan.recommendedDays || availableDays,
-          estimatedWeeklyBurn: data.plan.estimatedWeeklyBurn || '800-1100 kcal',
-          weeklySchedule: data.plan.weeklySchedule || [],
-          createdByAI: true,
-          status: 'Active',
-          createdAt: new Date().toISOString(),
-          disclaimer: data.plan.disclaimer
-        };
-
-        StorageService.saveUserProfile(updatedProfile);
-        StorageService.saveActivePlan(generatedPlan);
-
-        onPlanGenerated(generatedPlan, updatedProfile);
+        setLoading(false);
+        onPlanGenerated(data.plan, updatedProfile);
         onClose();
       } else {
-        throw new Error(data.error || 'Failed to generate plan.');
+        throw new Error(data.error || 'AI plan generation request failed.');
       }
     } catch (err: any) {
       console.error('Assessment generation error:', err);
-      setError('Could not connect to AI Engine. Using optimized fallback plan.');
-
-      const fallbackPlan: WorkoutPlan = {
-        id: 'plan_fb_' + Date.now(),
-        userId: user.id,
-        planTitle: `${experience} ${selectedGoal} Home Routine`,
-        summary: `Tailored ${availableDays}-day ${durationMinutes}-minute routine for ${location} exercise.`,
-        recommendedDays: availableDays,
-        estimatedWeeklyBurn: '700-1000 kcal',
-        createdByAI: true,
-        status: 'Active',
-        createdAt: new Date().toISOString(),
-        weeklySchedule: StorageService.getActivePlan()?.weeklySchedule || []
-      };
-
-      StorageService.saveUserProfile(updatedProfile);
-      StorageService.saveActivePlan(fallbackPlan);
-      onPlanGenerated(fallbackPlan, updatedProfile);
-      onClose();
-    } finally {
       setLoading(false);
+      setError(err.message || 'Failed to connect to AI server. Please retry.');
     }
   };
 
@@ -189,8 +180,9 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
         {/* Modal Body */}
         <div className="p-6">
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl">
-              {error}
+            <div className="mb-4 p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+              <span>{error}</span>
             </div>
           )}
 
@@ -366,7 +358,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                 <div>
                   <p className="font-bold text-blue-950">AI Personalization Ready</p>
                   <p className="text-slate-600 text-[11px] mt-0.5">
-                    Clicking "Generate AI Plan" will invoke FitMate AI to structure exercises, rep targets, rest periods, and safety tips for your goal ({selectedGoal}).
+                    Clicking "Generate AI Plan" will invoke FitMate AI to structure exercises, rep targets, rest periods, and safety tips for your goal ({selectedGoal}). Saved directly to your Supabase account.
                   </p>
                 </div>
               </div>

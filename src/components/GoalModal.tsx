@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, Target, Plus } from 'lucide-react';
+import { X, Target, Plus, AlertCircle } from 'lucide-react';
 import { Goal, GoalType } from '../types';
-import { StorageService } from '../services/storage';
+import { useAuth } from '../context/AuthContext';
+import { SupabaseService } from '../services/supabaseClient';
 
 interface GoalModalProps {
   isOpen: boolean;
@@ -10,6 +11,7 @@ interface GoalModalProps {
 }
 
 export const GoalModal: React.FC<GoalModalProps> = ({ isOpen, onClose, onGoalAdded }) => {
+  const { user } = useAuth();
   const [goalType, setGoalType] = useState<GoalType>('General Fitness');
   const [title, setTitle] = useState('');
   const [target, setTarget] = useState<number>(4);
@@ -17,27 +19,38 @@ export const GoalModal: React.FC<GoalModalProps> = ({ isOpen, onClose, onGoalAdd
   const [targetDate, setTargetDate] = useState(
     new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]
   );
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    setError(null);
+    if (!title.trim() || !user) return;
 
-    const newGoal = StorageService.addGoal({
-      userId: StorageService.getUserProfile().id,
-      goalType,
-      title: title.trim(),
-      target,
-      currentProgress: 0,
-      unit,
-      startDate: new Date().toISOString().split('T')[0],
-      targetDate,
-      status: 'In Progress'
-    });
+    setIsLoading(true);
 
-    onGoalAdded(newGoal);
-    onClose();
+    try {
+      const newGoal = await SupabaseService.saveGoal({
+        userId: user.id,
+        goalType,
+        title: title.trim(),
+        target,
+        currentProgress: 0,
+        unit,
+        startDate: new Date().toISOString().split('T')[0],
+        targetDate,
+        status: 'In Progress'
+      });
+
+      setIsLoading(false);
+      onGoalAdded(newGoal);
+      onClose();
+    } catch (err: any) {
+      setIsLoading(false);
+      setError(err.message || 'Failed to save goal');
+    }
   };
 
   return (
@@ -55,6 +68,13 @@ export const GoalModal: React.FC<GoalModalProps> = ({ isOpen, onClose, onGoalAdd
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {error && (
+          <div className="mx-5 mt-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+            <span>{error}</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div>
@@ -124,10 +144,17 @@ export const GoalModal: React.FC<GoalModalProps> = ({ isOpen, onClose, onGoalAdd
 
           <button
             type="submit"
+            disabled={isLoading}
             className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-2 mt-2"
           >
-            <Plus className="w-4 h-4" />
-            <span>Create Goal</span>
+            {isLoading ? (
+              <span className="inline-block animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+            ) : (
+              <>
+                <Plus className="w-4 h-4" />
+                <span>Create Goal</span>
+              </>
+            )}
           </button>
         </form>
 
